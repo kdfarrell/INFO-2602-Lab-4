@@ -38,6 +38,9 @@ def create_app():
 app = create_app()
 jwt = JWTManager(app)
 
+@jwt.user_identity_loader
+def user_identity_lookup(identify):
+  return identify
 
 @jwt.user_lookup_loader
 def user_lookup_callback(_jwt_header, jwt_data):
@@ -106,6 +109,15 @@ def edit_todo_page(id):
   flash('Todo not found or unauthorized')
   return redirect(url_for('todos_page'))
 
+@app.route('/todo-stats', methods=["GET"])
+@login_required(Admin)
+def todo_stats():
+  return jsonify(current_user.get_todo_stats())
+
+@app.route('/stats')
+@login_required(Admin)
+def stats_page():
+  return render_template('stats.html')
 
 # Action Routes
 @app.route('/signup', methods=['POST'])
@@ -132,10 +144,13 @@ def login_action():
   token = login_user(data['username'], data['password'])
   print(token)
   response = None
+  user = User.query.filter_by(username=data['username']).first()
   if token:
     flash('Logged in successfully.')  # send message to next page
-    response = redirect(
-        url_for('todos_page'))  # redirect to main page if login successful
+    if user.type == "regular user":
+      response = redirect(url_for('todos_page'))
+    else :
+      response = redirect(url_for('admin_page'))  # redirect to main page if login successful
     set_access_cookies(response, token)
   else:
     flash('Invalid username or password')  # send message to next page
@@ -188,6 +203,15 @@ def logout_action():
   response = redirect(url_for('login_page'))
   unset_jwt_cookies(response)
   return response
+
+@app.route('/admin')
+@login_required(Admin)
+def admin_page():
+  page = request.args.get('page', 1, type=int)
+  q = request.args.get('q', default='', type=str)
+  done = request.args.get('done', default='any', type=str)
+  todos = current_user.search_todos(q, done, page)
+  return render_template('admin.html', todos=todos, q=q, page=page, done=done)
 
 if __name__ == "__main__":
   app.run(host='0.0.0.0', port=81)
